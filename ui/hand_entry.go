@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"github.com/chosenoffset/pokertracker/gameState"
 )
 
 // formatCard converts a card string like "Ah" to "A♥"
@@ -132,6 +133,7 @@ func buildPlayerBox(ui *UI, seat int) fyne.CanvasObject {
 
 	blinds := gs.Blinds()
 	stackBB := float64(player.Stack) / float64(blinds.BigBlind)
+	fmt.Printf("Seat %d: %s (%d chips, %.1f BB)\n", seat, player.Name, player.Stack, stackBB)
 
 	nameLabel := widget.NewLabel(player.Name)
 	nameLabel.TextStyle.Bold = true
@@ -172,8 +174,8 @@ func buildTableLayout(ui *UI, centerContent fyne.CanvasObject) fyne.CanvasObject
 	// Top row: seats 4, 5, 6 - evenly spaced across width
 	topRow := container.NewBorder(
 		nil, nil,
-		seat4, // left
-		seat6, // right
+		seat4,                      // left
+		seat6,                      // right
 		container.NewCenter(seat5), // center
 	)
 
@@ -188,8 +190,8 @@ func buildTableLayout(ui *UI, centerContent fyne.CanvasObject) fyne.CanvasObject
 	// Bottom row: seats 2, 1, 8 - evenly spaced across width
 	bottomRow := container.NewBorder(
 		nil, nil,
-		seat2, // left
-		seat8, // right
+		seat2,                      // left
+		seat8,                      // right
 		container.NewCenter(seat1), // center
 	)
 
@@ -202,26 +204,10 @@ func buildTableLayout(ui *UI, centerContent fyne.CanvasObject) fyne.CanvasObject
 	)
 }
 
-func ShowHandEntry(ui *UI) {
-	gs := ui.gameState
-
-	// If we're starting fresh (not mid-hand), start the new hand
-	if gs.CurrentHandID == 0 {
-		gs.StartNewHand()
-
-		hand, err := ui.db.CreateHand(gs.TournamentID, gs.HandNum, gs.Level, gs.ButtonSeat)
-		if err != nil {
-			fmt.Println("Error creating hand:", err)
-			return
-		}
-		gs.CurrentHandID = hand.ID
-	}
-
-	// Top bar - hand info
-	blinds := gs.Blinds()
+func createTopBar(gs *gameState.GameState, ui *UI) *fyne.Container {
 	infoLabel := widget.NewLabel(fmt.Sprintf(
 		"Hand #%d | Level %d: %d/%d/%d",
-		gs.HandNum, gs.Level+1, blinds.SmallBlind, blinds.BigBlind, blinds.Ante,
+		gs.HandNum, gs.Level+1, gs.Blinds().SmallBlind, gs.Blinds().BigBlind, gs.Blinds().Ante,
 	))
 
 	levelUpBtn := widget.NewButton("Level Up", func() {
@@ -269,43 +255,15 @@ func ShowHandEntry(ui *UI) {
 		}
 	})
 
-	topBar := container.NewBorder(nil, nil, infoLabel, levelUpBtn)
+	return container.NewBorder(nil, nil, infoLabel, levelUpBtn)
+}
 
-	// Pot and bet info
-	currentBetBB := float64(gs.CurrentBet) / float64(blinds.BigBlind)
-	potBB := float64(gs.Pot) / float64(blinds.BigBlind)
-
-	potLabel := widget.NewLabel(fmt.Sprintf("Pot: %.1f BB (%d chips)", potBB, gs.Pot))
-	betLabel := widget.NewLabel(fmt.Sprintf("Current Bet: %.1f BB (%d chips)", currentBetBB, gs.CurrentBet))
-
-	potInfo := container.NewHBox(potLabel, widget.NewLabel("  |  "), betLabel)
-
-	// Street indicator
-	streetNames := []string{"Preflop", "Flop", "Turn", "River"}
-	streetLabel := widget.NewLabel(fmt.Sprintf("Street: %s", streetNames[gs.Street]))
-
-	// Build card display for center of table
-	cardDisplay := buildCardDisplay(gs.HeroCards, gs.Flop, gs.Turn, gs.River)
-
-	// Build full table layout with 8 seats around the cards
-	tableLayout := buildTableLayout(ui, cardDisplay)
-
-	// Check if hand is over (only one player left)
-	playersInHand := 0
-	lastPlayerSeat := 0
-	for i := 0; i < 8; i++ {
-		if gs.InHand[i] {
-			playersInHand++
-			lastPlayerSeat = i + 1
-		}
-	}
-
-	var actionArea fyne.CanvasObject
-
+func determineActionArea(gs *gameState.GameState, ui *UI, playersInHand int, lastPlayerSeat int) fyne.CanvasObject {
 	if playersInHand == 1 {
 		// Hand is over, one player wins
+		fmt.Println("Hand is over, one player wins")
 		winnerName := gs.Players[lastPlayerSeat-1].Name
-		actionArea = container.NewVBox(
+		return container.NewVBox(
 			widget.NewLabel(fmt.Sprintf("%s wins the pot!", winnerName)),
 			widget.NewButton("End Hand", func() {
 				ui.endHand(lastPlayerSeat)
@@ -315,31 +273,21 @@ func ShowHandEntry(ui *UI) {
 		// Street is complete, need next street or showdown
 		if gs.Street >= 3 {
 			// River complete, need showdown
-			actionArea = BuildShowdownUI(ui)
+			fmt.Println("River complete, need showdown")
+			return BuildShowdownUI(ui)
 		} else {
 			// Prompt for next street
-			actionArea = BuildNextStreetUI(ui)
+			fmt.Println("Next Street")
+			return BuildNextStreetUI(ui)
 		}
 	} else {
 		// Action needed from current player
-		actionArea = buildActionUI(ui)
+		fmt.Println("Need the action from current player")
+		return buildActionUI(ui)
 	}
+}
 
-	// Navigation
-	homeBtn := widget.NewButton("Back to Home", func() {
-		ui.ShowHome()
-	})
-
-	// Card input section at bottom
-	heroCardsEntry := widget.NewEntry()
-	heroCardsEntry.SetText(gs.HeroCards)
-	heroCardsEntry.SetPlaceHolder("e.g., AhKd")
-	heroCardsEntry.OnChanged = func(s string) {
-		gs.HeroCards = s
-		// Don't refresh on every keystroke - it steals focus
-	}
-
-	var boardInputs fyne.CanvasObject
+func buildBoardInputs(gs *gameState.GameState) fyne.CanvasObject {
 	if gs.Street >= 1 {
 		flopEntry := widget.NewEntry()
 		flopEntry.SetText(gs.Flop)
@@ -367,56 +315,91 @@ func ShowHandEntry(ui *UI) {
 					// Don't refresh on every keystroke - it steals focus
 				}
 
-				boardInputs = container.NewVBox(
+				return container.NewVBox(
 					container.NewBorder(nil, nil, widget.NewLabel("Flop:"), nil, flopEntry),
 					container.NewBorder(nil, nil, widget.NewLabel("Turn:"), nil, turnEntry),
 					container.NewBorder(nil, nil, widget.NewLabel("River:"), nil, riverEntry),
 				)
 			} else {
-				boardInputs = container.NewVBox(
+				return container.NewVBox(
 					container.NewBorder(nil, nil, widget.NewLabel("Flop:"), nil, flopEntry),
 					container.NewBorder(nil, nil, widget.NewLabel("Turn:"), nil, turnEntry),
 				)
 			}
 		} else {
-			boardInputs = container.NewBorder(nil, nil, widget.NewLabel("Flop:"), nil, flopEntry)
+			return container.NewBorder(nil, nil, widget.NewLabel("Flop:"), nil, flopEntry)
 		}
 	} else {
-		boardInputs = widget.NewLabel("")
+		return widget.NewLabel("")
+	}
+}
+
+func ShowHandEntry(ui *UI) {
+	gs := ui.gameState
+
+	// If we're starting fresh (not mid-hand), start the new hand
+	if gs.CurrentHandID == 0 {
+		gs.StartNewHand()
+
+		hand, err := ui.db.CreateHand(gs.TournamentID, gs.HandNum, gs.Level, gs.ButtonSeat)
+		if err != nil {
+			fmt.Println("Error creating hand:", err)
+			return
+		}
+		gs.CurrentHandID = hand.ID
 	}
 
-	cardInputSection := container.NewVBox(
-		widget.NewSeparator(),
-		widget.NewLabel("Card Input:"),
-		container.NewBorder(nil, nil, widget.NewLabel("Hero:"), nil, heroCardsEntry),
-		boardInputs,
-	)
+	// Top bar - hand info
+	topBar := createTopBar(gs, ui)
 
-	// Top section with info
-	topSection := container.NewVBox(
-		topBar,
-		widget.NewSeparator(),
-		potInfo,
-		streetLabel,
-	)
+	// Pot and bet info
+	currentBetBB := float64(gs.CurrentBet) / float64(gs.Blinds().BigBlind)
+	potBB := float64(gs.Pot) / float64(gs.Blinds().BigBlind)
 
-	// Bottom section with inputs and actions
-	bottomSection := container.NewVBox(
-		cardInputSection,
-		widget.NewSeparator(),
-		actionArea,
-		widget.NewSeparator(),
-		homeBtn,
-	)
+	potLabel := widget.NewLabel(fmt.Sprintf("Pot: %.1f BB (%d chips)", potBB, gs.Pot))
+	betLabel := widget.NewLabel(fmt.Sprintf("Current Bet: %.1f BB (%d chips)", currentBetBB, gs.CurrentBet))
 
-	// Use border layout: top info, center table, bottom inputs/actions
-	content := container.NewBorder(
-		topSection,
-		bottomSection,
-		nil,
-		nil,
-		tableLayout,
-	)
+	potInfo := container.NewHBox(potLabel, widget.NewLabel("  |  "), betLabel)
 
-	ui.window.SetContent(content)
+	streetNames := []string{"Preflop", "Flop", "Turn", "River"}
+	streetLabel := widget.NewLabel(fmt.Sprintf("Street: %s", streetNames[gs.Street]))
+
+	cardDisplay := buildCardDisplay(gs.HeroCards, gs.Flop, gs.Turn, gs.River)
+
+	tableLayout := buildTableLayout(ui, cardDisplay)
+
+	playersInHand := 0
+	lastPlayerSeat := 0
+	for i := 0; i < 8; i++ {
+		if gs.InHand[i] {
+			playersInHand++
+			lastPlayerSeat = i + 1
+		}
+	}
+
+	actionArea := determineActionArea(gs, ui, playersInHand, lastPlayerSeat)
+
+	homeBtn := widget.NewButton("Back to Home", func() {
+		ui.ShowHome()
+	})
+
+	heroCardsEntry := widget.NewEntry()
+	heroCardsEntry.SetText(gs.HeroCards)
+	heroCardsEntry.SetPlaceHolder("e.g., AhKd")
+	heroCardsEntry.OnChanged = func(s string) {
+		gs.HeroCards = s
+	}
+
+	boardInputs := buildBoardInputs(gs)
+
+	cardInputSection := container.NewVBox(widget.NewSeparator(), widget.NewLabel("Card Input:"),
+		container.NewBorder(nil, nil, widget.NewLabel("Hero:"), nil, heroCardsEntry), boardInputs)
+
+	topSection := container.NewVBox(topBar, widget.NewSeparator(), potInfo, streetLabel)
+
+	bottomSection := container.NewVBox(cardInputSection, widget.NewSeparator(), actionArea, widget.NewSeparator(), homeBtn)
+
+	scrollContent := container.NewVBox(topSection, widget.NewSeparator(), tableLayout, widget.NewSeparator(), bottomSection)
+
+	ui.window.SetContent(container.NewVScroll(scrollContent))
 }

@@ -1,6 +1,8 @@
 package gameState
 
-import "github.com/chosenoffset/pokertracker/types"
+import (
+	"github.com/chosenoffset/pokertracker/types"
+)
 
 type BlindLevel struct {
 	SmallBlind int
@@ -289,9 +291,9 @@ func (gs *GameState) AwardPot(seat int) {
 
 // Pot represents a main pot or side pot
 type Pot struct {
-	Amount         int     // Chips in this pot
-	EligibleSeats  []int   // Seats that can contest this pot
-	Cap            int     // Investment cap for this pot (0 for main pot with no all-ins)
+	Amount        int   // Chips in this pot
+	EligibleSeats []int // Seats that can contest this pot
+	Cap           int   // Investment cap for this pot (0 for main pot with no all-ins)
 }
 
 // CalculatePots calculates all pots (main and side) based on player investments

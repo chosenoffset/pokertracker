@@ -28,7 +28,7 @@ func ShowTournamentSetup(ui *UI) {
 	for i := 0; i < 8; i++ {
 		playerNames[i] = widget.NewEntry()
 		playerStacks[i] = widget.NewEntry()
-		playerStacks[i].SetText("5000")
+		playerStacks[i].SetText("100")
 
 		if i == 0 {
 			playerNames[i].SetText("ChosenOffset")
@@ -85,9 +85,12 @@ func ShowTournamentSetup(ui *UI) {
 				name = fmt.Sprintf("Villain %d", i)
 			}
 
-			stack := parseIntOr(playerStacks[i].Text, 5000)
+			stack := parseFloatOr(playerStacks[i].Text, 100.0)
 
-			player, err := ui.db.CreatePlayer(tournament.ID, i+1, name, stack)
+			fmt.Printf("Creating player %s with stack %d\n", name, stack)
+			fmt.Printf("Stack converted to chips: %d\n", stack*50)
+			//Yea, magic number, but that's what I'm running with for now.  50 is level 1 BB, so convert BB to chips before storing in DB
+			player, err := ui.db.CreatePlayer(tournament.ID, i+1, name, int(stack*50))
 			if err != nil {
 				fmt.Println("Error creating player:", err)
 				return

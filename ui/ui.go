@@ -200,19 +200,15 @@ func (ui *UI) endHand(winnerSeat int) {
 		}
 	}
 
-	// Clear current hand and advance button for next hand
 	gs.CurrentHandID = 0
 	gs.AdvanceButton()
-	// DON'T increment HandNum here - StartNewHand() does it
 
-	// Return to hand entry - it will create the next hand when ready
 	ShowHandEntry(ui)
 }
 
 func (ui *UI) endHandMultiPot(primaryWinnerSeat int) {
 	gs := ui.gameState
 
-	// Save pot size (already awarded in the multi-pot UI, so use sum of TotalInvested)
 	finalPotSize := 0
 	for i := 0; i < 8; i++ {
 		finalPotSize += gs.TotalInvested[i]
