@@ -335,11 +335,26 @@ func buildBoardInputs(gs *gameState.GameState) fyne.CanvasObject {
 }
 
 func ShowHandEntry(ui *UI) {
-	gs := ui.gameState
+    gs := ui.gameState
 
-	// If we're starting fresh (not mid-hand), start the new hand
-	if gs.CurrentHandID == 0 {
-		gs.StartNewHand()
+    // If tournament is finished, show summary and do not start new hands
+    if t, err := ui.db.GetTournament(gs.TournamentID); err == nil && t != nil && t.FinishPlace > 0 {
+        finishedLabel := widget.NewLabel(fmt.Sprintf("Tournament Finished: %s", ordinal(t.FinishPlace)))
+        homeBtn := widget.NewButton("Back to Home", func() { ui.ShowHome() })
+        content := container.NewVBox(
+            widget.NewLabel("Tournament"),
+            widget.NewSeparator(),
+            finishedLabel,
+            widget.NewSeparator(),
+            homeBtn,
+        )
+        ui.window.SetContent(container.NewCenter(content))
+        return
+    }
+
+    // If we're starting fresh (not mid-hand), start the new hand
+    if gs.CurrentHandID == 0 {
+        gs.StartNewHand()
 
 		hand, err := ui.db.CreateHand(gs.TournamentID, gs.HandNum, gs.Level, gs.ButtonSeat)
 		if err != nil {

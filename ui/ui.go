@@ -167,8 +167,55 @@ func (ui *UI) recordAction(seat int, action string, amount int) {
 	ui.refreshHandEntry()
 }
 
+// checkAndFinalizeTournamentIfNeeded determines if the tournament should be marked complete
+// Conditions:
+// - Hero (seat 1 per requirement, but using gs.HeroSeat) is busted -> set FinishPlace = alivePlayers + 1
+// - Hero is the last remaining alive player -> set FinishPlace = 1
+func (ui *UI) checkAndFinalizeTournamentIfNeeded() {
+    gs := ui.gameState
+    if gs == nil {
+        return
+    }
+
+    // If already finished, skip
+    t, err := ui.db.GetTournament(gs.TournamentID)
+    if err != nil || t == nil {
+        return
+    }
+    if t.FinishPlace > 0 {
+        return
+    }
+
+    // Count alive players and hero status
+    alive := 0
+    for i := 0; i < 8; i++ {
+        if gs.Players[i].IsAlive {
+            alive++
+        }
+    }
+
+    heroIdx := gs.HeroSeat - 1
+    if heroIdx < 0 || heroIdx >= 8 {
+        heroIdx = 0 // Fallback to seat 1 if unspecified
+    }
+    heroAlive := gs.Players[heroIdx].IsAlive
+
+    place := 0
+    if !heroAlive {
+        // Hero is busted; their place is number of players still alive + 1
+        place = alive + 1
+    } else if alive == 1 {
+        // Hero is last remaining
+        place = 1
+    }
+
+    if place > 0 {
+        _ = ui.db.UpdateTournamentFinish(gs.TournamentID, place)
+    }
+}
+
 func (ui *UI) endHand(winnerSeat int) {
-	gs := ui.gameState
+    gs := ui.gameState
 
 	// Save pot size BEFORE awarding it
 	finalPotSize := gs.Pot
@@ -193,21 +240,24 @@ func (ui *UI) endHand(winnerSeat int) {
 		}
 	}
 
-	for i := 0; i < 8; i++ {
-		if gs.Players[i].IsAlive && gs.Players[i].Stack == 0 {
-			gs.BustPlayer(i + 1)
-			_ = ui.db.BustPlayer(gs.TournamentID, i+1, gs.HandNum)
-		}
-	}
+    for i := 0; i < 8; i++ {
+        if gs.Players[i].IsAlive && gs.Players[i].Stack == 0 {
+            gs.BustPlayer(i + 1)
+            _ = ui.db.BustPlayer(gs.TournamentID, i+1, gs.HandNum)
+        }
+    }
 
-	gs.CurrentHandID = 0
-	gs.AdvanceButton()
+    // After processing busts, check if tournament should be finalized
+    ui.checkAndFinalizeTournamentIfNeeded()
 
-	ShowHandEntry(ui)
+    gs.CurrentHandID = 0
+    gs.AdvanceButton()
+
+    ShowHandEntry(ui)
 }
 
 func (ui *UI) endHandMultiPot(primaryWinnerSeat int) {
-	gs := ui.gameState
+    gs := ui.gameState
 
 	finalPotSize := 0
 	for i := 0; i < 8; i++ {
@@ -234,20 +284,23 @@ func (ui *UI) endHandMultiPot(primaryWinnerSeat int) {
 		}
 	}
 
-	for i := 0; i < 8; i++ {
-		if gs.Players[i].IsAlive && gs.Players[i].Stack == 0 {
-			gs.BustPlayer(i + 1)
-			_ = ui.db.BustPlayer(gs.TournamentID, i+1, gs.HandNum)
-		}
-	}
+    for i := 0; i < 8; i++ {
+        if gs.Players[i].IsAlive && gs.Players[i].Stack == 0 {
+            gs.BustPlayer(i + 1)
+            _ = ui.db.BustPlayer(gs.TournamentID, i+1, gs.HandNum)
+        }
+    }
 
-	// Clear current hand and advance button for next hand
-	gs.CurrentHandID = 0
-	gs.AdvanceButton()
-	// DON'T increment HandNum here - StartNewHand() does it
+    // After processing busts, check if tournament should be finalized
+    ui.checkAndFinalizeTournamentIfNeeded()
 
-	// Return to hand entry - it will create the next hand when ready
-	ShowHandEntry(ui)
+    // Clear current hand and advance button for next hand
+    gs.CurrentHandID = 0
+    gs.AdvanceButton()
+    // DON'T increment HandNum here - StartNewHand() does it
+
+    // Return to hand entry - it will create the next hand when ready
+    ShowHandEntry(ui)
 }
 
 func (ui *UI) refreshHandEntry() {

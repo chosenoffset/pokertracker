@@ -87,8 +87,6 @@ func ShowTournamentSetup(ui *UI) {
 
 			stack := parseFloatOr(playerStacks[i].Text, 100.0)
 
-			fmt.Printf("Creating player %s with stack %d\n", name, stack)
-			fmt.Printf("Stack converted to chips: %d\n", stack*50)
 			//Yea, magic number, but that's what I'm running with for now.  50 is level 1 BB, so convert BB to chips before storing in DB
 			player, err := ui.db.CreatePlayer(tournament.ID, i+1, name, int(stack*50))
 			if err != nil {
